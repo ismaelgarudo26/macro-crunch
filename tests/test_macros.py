@@ -1,6 +1,6 @@
 import pytest
 
-from macros import check_fit, compute_macros
+from macro_crunch.macros import check_fit, compute_macros, fit_details
 
 TABLE = {
     "chicken_breast": {"cal": 165, "protein": 31, "carbs": 0, "fat": 3.6},
@@ -249,3 +249,37 @@ def test_check_fit_33_deltas_has_exactly_four_keys_as_raw_differences():
     passes, deltas = check_fit(computed, remaining)
     assert set(deltas.keys()) == {"cal", "protein", "carbs", "fat"}
     assert deltas == {"cal": 50, "protein": 8, "carbs": -10, "fat": -1}
+
+
+def test_fit_details_fat_fails_others_pass():
+    computed = {"cal": 600, "protein": 45, "carbs": 60, "fat": 2.1}
+    remaining = {"cal": 600, "protein": 45, "carbs": 60, "fat": 15}
+    details = fit_details(computed, remaining)
+    assert details["fat"]["ok"] is False
+    assert details["fat"]["pct"] == -0.86
+    assert details["cal"]["ok"] is True
+    assert details["protein"]["ok"] is True
+    assert details["carbs"]["ok"] is True
+
+def test_fit_details_zero_remaining_fat():
+    computed = {"cal": 600, "protein": 45, "carbs": 60, "fat": 5}
+    remaining = {"cal": 600, "protein": 45, "carbs": 60, "fat": 0}
+    details = fit_details(computed, remaining)
+    assert details["fat"]["ok"] is False
+    assert details["fat"]["pct"] is None
+
+def test_fit_details_negative_remaining_carbs():
+    computed = {"cal": 600, "protein": 45, "carbs": 10, "fat": 15}
+    remaining = {"cal": 600, "protein": 45, "carbs": -5, "fat": 15}
+    details = fit_details(computed, remaining)
+    assert details["carbs"]["ok"] is False
+    assert details["carbs"]["pct"] is None
+    assert details["protein"]["ok"] is True
+    assert details["fat"]["ok"] is True
+
+def test_fit_details_protein_over_at_zero_remaining():
+    computed = {"cal": 600, "protein": 30, "carbs": 60, "fat": 15}
+    remaining = {"cal": 600, "protein": 0, "carbs": 60, "fat": 15}
+    details = fit_details(computed, remaining)
+    assert details["protein"]["ok"] is True
+    assert details["protein"]["pct"] is None

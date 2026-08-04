@@ -4,23 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-macro-crunch is a small, pure-Python macro-nutrient calculator. There is no application entry point yet — the
-repository currently consists of a data table, two logic functions, and their test suite:
+macro-crunch is a small, pure-Python macro-nutrient calculator. There is no application entry point yet. Code,
+tests, and data live in separate top-level folders:
 
-- [ingredients.json](ingredients.json) — 31 common fridge/pantry ingredients keyed by snake_case id, each with
-  `cal`, `protein`, `carbs`, `fat` per 100g (numbers only, no units).
-- [macros.py](macros.py) — pure logic, no side effects: `compute_macros(items, table)` and
-  `check_fit(computed, remaining)`. Read the docstrings on these two functions before modifying them — they are
-  the source of truth for the rounding rule, the KeyError-on-unknown-id contract, and the per-macro tolerance
-  rules (including the zero/negative-remaining edge cases for `check_fit`).
-- [test_macros.py](test_macros.py) — pytest suite covering both functions, including boundary-value tests for
-  every tolerance threshold and the zero/negative-remaining branches.
-- `.env.example` — contains only `OPENAI_API_KEY=`, indicating an OpenAI integration is anticipated even though
-  no code currently imports it.
+- [data/ingredients.json](data/ingredients.json) — 31 common fridge/pantry ingredients keyed by snake_case id,
+  each with `cal`, `protein`, `carbs`, `fat` per 100g (numbers only, no units). Kept outside the package since
+  it's loaded by path at runtime, not imported as Python, and may grow or be replaced independently of the code.
+- [macro_crunch/macros.py](macro_crunch/macros.py) — pure logic, no side effects: `compute_macros(items, table)`,
+  `fit_details(computed, remaining)`, and `check_fit(computed, remaining)` (a thin wrapper around
+  `fit_details`). Read the docstrings on these functions before modifying them — they are the source of truth
+  for the rounding rule, the KeyError-on-unknown-id contract, and the per-macro tolerance rules (including the
+  zero/negative-remaining edge cases), which live only in `fit_details`.
+- [macro_crunch/llm.py](macro_crunch/llm.py) — `propose(available_ingredients, remaining)`, calls the OpenAI API
+  and returns a validated list of `{id, grams}` objects. See the "llm.py — propose contract" section below.
+- [tests/test_macros.py](tests/test_macros.py) — pytest suite covering `compute_macros`, `check_fit`, and
+  `fit_details`, including boundary-value tests for every tolerance threshold and the zero/negative-remaining
+  branches.
+- `.env.example` — contains only `OPENAI_API_KEY=`; `.env` (gitignored) holds the real key that `llm.py` loads
+  via `python-dotenv`.
+- `conftest.py` at the repo root is intentionally empty — its only job is to make pytest resolve `macro_crunch`
+  as an importable package regardless of how pytest is invoked.
+- `scratch.py` at the repo root is a throwaway script for manually exercising `propose`/`compute_macros`/
+  `check_fit` end to end — not a test, safe to delete/overwrite at any time.
 
-`macros.py` must stay free of `streamlit`/`openai` imports and side effects (printing, I/O) — it is meant to be
-pure logic that a future UI/API layer imports — this keeps the test suite deterministic (no API key, no network)
-and lets the UI and model layers be swapped without touching logic (separation of concerns).
+`macro_crunch/macros.py` must stay free of `streamlit`/`openai` imports and side effects (printing, I/O) — it is
+meant to be pure logic that a future UI/API layer imports — this keeps the test suite deterministic (no API key,
+no network) and lets the UI and model layers be swapped without touching logic (separation of concerns).
 
 ## Commands
 
@@ -34,7 +43,7 @@ python -m pip install pytest
 python -m pytest -v
 
 # Run a single test
-python -m pytest -v test_macros.py::test_check_fit_15_cal_remaining_zero_computed_zero_passes
+python -m pytest -v tests/test_macros.py::test_check_fit_15_cal_remaining_zero_computed_zero_passes
 
 # Run only compute_macros or only check_fit tests
 python -m pytest -v -k compute_macros
@@ -64,7 +73,7 @@ call the interpreter directly, e.g.
   isolation pattern (hold the other three macros at a trivially-passing baseline) so a failure is attributable to
   a single rule.
 
-## llm.py (to be built) — propose contract
+## macro_crunch/llm.py — propose contract
 
 The model proposes meals; it never does arithmetic. `propose(available_ingredients, remaining)` returns ONLY a
 JSON list of `{id, grams}` objects.
