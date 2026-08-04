@@ -30,3 +30,35 @@ def build_message(details):
         parts.append(f"{macro} {magnitude} {direction}")
 
     return ", ".join(parts)
+
+
+_TIER_FRAMING = {
+    2: (
+        "Your previous meal missed the targets below. Please adjust the ingredient amounts "
+        "to correct these misses, keeping the same general meal."
+    ),
+    3: (
+        "Two attempts have missed. Disregard the previous meals and build a new one from "
+        "any combination of available ingredients. Prioritize hitting the macro targets "
+        "even if the meal is unconventional."
+    ),
+}
+
+
+def select_tier(attempt):
+    """Return the fixed framing text to use when re-prompting after a failed attempt.
+
+    Input:
+        attempt: the retry attempt number (2 for the first retry, 3 for the second).
+
+    Output:
+        str - the framing text for that attempt: "revise" framing (adjust amounts, same
+        meal) for attempt 2, "rebuild" framing (start over, any ingredients) for attempt 3.
+
+    Any other attempt number (including 1, 0, or 4+) raises ValueError - there is no framing
+    for a first attempt (nothing to revise yet) or beyond the second retry.
+    """
+    try:
+        return _TIER_FRAMING[attempt]
+    except KeyError:
+        raise ValueError(f"no framing for attempt {attempt!r}") from None

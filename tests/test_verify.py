@@ -1,4 +1,6 @@
-from macro_crunch.verify import build_message
+import pytest
+
+from macro_crunch.verify import build_message, select_tier
 
 
 def test_message_names_failing_macro_with_direction():
@@ -67,3 +69,22 @@ def test_message_shows_all_four_macros_when_all_fail():
     assert "fat" in msg
     assert "over" in msg
     assert "under" in msg
+
+
+def test_select_tier_2_mentions_adjust():
+    assert "adjust" in select_tier(2)
+
+
+def test_select_tier_3_mentions_any_combination():
+    assert "any combination" in select_tier(3)
+
+
+def test_select_tier_2_and_3_differ():
+    assert select_tier(2) != select_tier(3)
+
+
+def test_select_tier_invalid_raises_value_error():
+    with pytest.raises(ValueError):
+        select_tier(1)
+    with pytest.raises(ValueError):
+        select_tier(4)
