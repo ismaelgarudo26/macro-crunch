@@ -1,3 +1,9 @@
+from dataclasses import dataclass
+
+from .llm import propose
+from .macros import compute_macros, fit_details
+
+
 def build_message(details):
     """Build a human-readable feedback string for the macros that failed their tolerance.
 
@@ -62,3 +68,24 @@ def select_tier(attempt):
         return _TIER_FRAMING[attempt]
     except KeyError:
         raise ValueError(f"no framing for attempt {attempt!r}") from None
+
+
+@dataclass
+class AttemptRecord:
+    feedback: str | None
+    proposal: object
+
+
+@dataclass
+class LoopResult:
+    status: str
+    attempts: list[AttemptRecord]
+    attempts_used: int
+    meal: object = None
+    details: dict | None = None
+    computed: dict | None = None
+
+
+def run_loop(available, remaining, propose_fn=propose):
+    """Not yet implemented."""
+    raise NotImplementedError
