@@ -86,6 +86,76 @@ class LoopResult:
     computed: dict | None = None
 
 
+@dataclass
+class _Attempt:
+    proposal: object
+    computed: dict
+    details: dict
+
+
+MAX_ATTEMPTS = 3
+
+
+def _miss_score(details):
+    score = 0.0
+    for info in details.values():
+        pct = info["pct"]
+        score += 1.0 if pct is None else abs(pct)
+    return score
+
+
 def run_loop(available, remaining, propose_fn=propose):
     """Not yet implemented."""
-    raise NotImplementedError
+    if remaining["cal"] <= 0:
+        return LoopResult(
+            status="impossible",
+            attempts=[],
+            attempts_used=0,
+            meal=None,
+            details=None,
+            computed=None,
+        )
+
+    attempts = []
+    misses = []
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        if attempt == 1:
+            feedback = None
+        else:
+            feedback = select_tier(attempt) + "\n" + build_message(misses[-1].details)
+
+        meal = propose_fn(available, remaining, feedback=feedback)
+        computed = compute_macros(meal)
+        details = fit_details(computed, remaining)
+        attempts.append(AttemptRecord(feedback=feedback, proposal=meal))
+
+        is_fit = all(m["ok"] for m in details.values())
+        if is_fit:
+            return LoopResult(
+                status="fit",
+                attempts=attempts,
+                attempts_used=attempt,
+                meal=meal,
+                details=details,
+                computed=computed,
+            )
+
+        misses.append(_Attempt(proposal=meal, computed=computed, details=details))
+
+    best = misses[0]
+    best_score = _miss_score(best.details)
+    for miss in misses[1:]:
+        score = _miss_score(miss.details)
+        if score < best_score:
+            best = miss
+            best_score = score
+
+    return LoopResult(
+        status="best_effort",
+        attempts=attempts,
+        attempts_used=MAX_ATTEMPTS,
+        meal=best.proposal,
+        details=best.details,
+        computed=best.computed,
+    )
