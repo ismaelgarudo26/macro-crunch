@@ -21,7 +21,7 @@ def test_happy_path_all_valid_rows_kept():
     valid = list(vision.KNOWN_IDS)[:4]
     rows = [{"id": vid, "approx": f"~{i + 1} units"} for i, vid in enumerate(valid)]
 
-    def fake(image, known_ids):
+    def fake(image, prompt):
         return rows
 
     result = extract_ingredients(IMAGE, vision_fn=fake)
@@ -38,7 +38,7 @@ def test_happy_path_all_valid_rows_kept():
 def test_all_invalid_rows_returns_empty_list():
     rows = [{"id": INVALID_ID, "approx": "1"}, {"id": INVALID_ID + "_2", "approx": "2"}]
 
-    def fake(image, known_ids):
+    def fake(image, prompt):
         return rows
 
     result = extract_ingredients(IMAGE, vision_fn=fake)
@@ -53,7 +53,7 @@ def test_mixed_valid_and_invalid_keeps_only_valid():
         + [{"id": INVALID_ID, "approx": "1"}, {"id": INVALID_ID + "_2", "approx": "2"}]
     )
 
-    def fake(image, known_ids):
+    def fake(image, prompt):
         return rows
 
     result = extract_ingredients(IMAGE, vision_fn=fake)
@@ -71,7 +71,7 @@ def test_approx_is_always_coerced_to_str():
     valid_id = next(iter(vision.KNOWN_IDS))
     rows = [{"id": valid_id, "approx": 2}]
 
-    def fake(image, known_ids):
+    def fake(image, prompt):
         return rows
 
     result = extract_ingredients(IMAGE, vision_fn=fake)
@@ -81,7 +81,7 @@ def test_approx_is_always_coerced_to_str():
 
 
 def test_vision_failure_propagates():
-    def fake(image, known_ids):
+    def fake(image, prompt):
         raise ValueError("exhausted JSON retries")
 
     with pytest.raises(ValueError):
@@ -92,7 +92,7 @@ def test_duplicate_ids_dedupe_keeping_first_approx():
     valid_id = next(iter(vision.KNOWN_IDS))
     rows = [{"id": valid_id, "approx": "first"}, {"id": valid_id, "approx": "second"}]
 
-    def fake(image, known_ids):
+    def fake(image, prompt):
         return rows
 
     result = extract_ingredients(IMAGE, vision_fn=fake)
