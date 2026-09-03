@@ -100,3 +100,65 @@ def test_duplicate_ids_dedupe_keeping_first_approx():
     assert len(result) == 1
     assert result[0]["id"] == valid_id
     assert result[0]["approx"] == "first"
+
+
+# --- extract_remaining contract (not yet implemented) -----------------------
+#
+# extract_remaining(image, vision_fn=call_vision, prompt=REMAINING_PROMPT) does not
+# exist yet - these tests are written TDD-style and are expected to fail until it's
+# implemented. Called via `vision.extract_remaining` (not imported by name at module
+# level) so a missing attribute fails each test individually instead of breaking
+# collection for the whole file.
+
+
+def test_extract_remaining_all_present_returns_four_floats():
+    def fake(image, prompt):
+        return {"cal": 500, "protein": 40.0, "carbs": 50, "fat": 15.5}
+
+    result = vision.extract_remaining(IMAGE, vision_fn=fake)
+
+    assert set(result.keys()) == {"cal", "protein", "carbs", "fat"}
+    for key in ("cal", "protein", "carbs", "fat"):
+        assert isinstance(result[key], float)
+
+
+def test_extract_remaining_one_missing_key_raises_value_error():
+    def fake(image, prompt):
+        return {"cal": 500, "protein": 40, "fat": 15}  # carbs missing
+
+    with pytest.raises(ValueError) as excinfo:
+        vision.extract_remaining(IMAGE, vision_fn=fake)
+
+    assert "carbs" in str(excinfo.value)
+
+
+def test_extract_remaining_two_missing_keys_raises_value_error_naming_both():
+    def fake(image, prompt):
+        return {"cal": 500, "protein": 40}  # carbs and fat missing
+
+    with pytest.raises(ValueError) as excinfo:
+        vision.extract_remaining(IMAGE, vision_fn=fake)
+
+    message = str(excinfo.value)
+    assert "carbs" in message
+    assert "fat" in message
+
+
+def test_extract_remaining_typo_key_treated_as_missing():
+    def fake(image, prompt):
+        return {"cal": 500, "protein": 40, "carbs": 50, "tas": 15}  # "fat" typoed as "tas"
+
+    with pytest.raises(ValueError) as excinfo:
+        vision.extract_remaining(IMAGE, vision_fn=fake)
+
+    assert "fat" in str(excinfo.value)
+
+
+def test_extract_remaining_negative_value_does_not_raise():
+    def fake(image, prompt):
+        return {"cal": -200, "protein": 40, "carbs": 50, "fat": 15}
+
+    result = vision.extract_remaining(IMAGE, vision_fn=fake)
+
+    assert result["cal"] == -200.0
+    assert isinstance(result["cal"], float)
