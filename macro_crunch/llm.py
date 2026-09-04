@@ -29,8 +29,10 @@ def propose(available_ingredients, remaining):
     compute_macros, not here.
 
     Inputs:
-        available_ingredients: list of ingredient ids the model may choose from (already
-            filtered to the ingredients table by the caller).
+        available_ingredients: list of {"id": str, "approx": str} rows the model may choose
+            from (already filtered to the ingredients table by the caller). `approx` is a
+            rough on-hand amount, so the model doesn't propose more of an ingredient than
+            is actually available.
         remaining: dict {"cal", "protein", "carbs", "fat"} - the macro budget the proposed
             meal should aim to fit.
 
@@ -76,7 +78,8 @@ def propose(available_ingredients, remaining):
 
 def _build_user_prompt(available_ingredients, remaining):
     return (
-        "Available ingredient ids: " + json.dumps(available_ingredients) + "\n"
+        "Available ingredients (id and approximate amount on hand): "
+        + json.dumps(available_ingredients) + "\n"
         "Remaining macro budget for this meal: " + json.dumps(remaining) + "\n"
         "Propose a meal using only the available ingredient ids that roughly fits the "
         "remaining macro budget."
@@ -93,7 +96,7 @@ def _validate(raw, available_ingredients):
     if not isinstance(items, list):
         return None, "response is not a JSON list of items"
 
-    available = set(available_ingredients)
+    available = {row["id"] for row in available_ingredients}
     validated = []
     for item in items:
         if not isinstance(item, dict):
