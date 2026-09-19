@@ -88,9 +88,11 @@ JSON list of `{id, grams}` objects.
 
 - I drive incrementally. If I ask for one function, write only that function — no extra files or scaffolding, no
   building ahead.
-- For load-bearing logic (the verify loop, the eval harness), write tests first from the spec, show me before
-  running, let me review. I write these myself; Claude Code scaffolds around them.
-- For UI and glue, build more freely.
+- Test-first via the `tdd` skill ([.claude/skills/tdd/SKILL.md](.claude/skills/tdd/SKILL.md)): once a plan is
+  approved, a subagent drafts the tests it calls for and describes them to me in plain English; I approve the
+  test list before any test code is written, and nothing outside a test file gets written before that. This
+  applies to all new logic in the project now, including UI/glue — not just load-bearing modules like the verify
+  loop or eval harness.
 
 ## Git
 

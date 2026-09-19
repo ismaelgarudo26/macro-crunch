@@ -1,7 +1,12 @@
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from .llm import propose
 from .macros import compute_macros, fit_details
+
+_INGREDIENTS_PATH = Path(__file__).resolve().parent.parent / "data" / "ingredients.json"
+_DEFAULT_TABLE = json.loads(_INGREDIENTS_PATH.read_text())
 
 
 def build_message(details):
@@ -104,8 +109,29 @@ def _miss_score(details):
     return score
 
 
-def run_loop(available, remaining, propose_fn=propose):
-    """Not yet implemented."""
+def run_loop(available, remaining, propose_fn=propose, table=_DEFAULT_TABLE):
+    """Propose, compute, and check a meal against `remaining`, retrying with escalating
+    feedback on a miss, up to MAX_ATTEMPTS.
+
+    Inputs:
+        available: ingredient rows passed through to `propose_fn` unchanged.
+        remaining: dict {"cal", "protein", "carbs", "fat"} - the macro budget to fit.
+        propose_fn: callable(available, remaining, feedback) -> meal; defaults to the real
+            `llm.propose`, injectable for tests.
+        table: dict mapping ingredient id -> per-100g {"cal", "protein", "carbs", "fat"},
+            passed to `compute_macros`; defaults to the table loaded from
+            data/ingredients.json, injectable for tests.
+
+    Output:
+        LoopResult - status is "impossible" (remaining["cal"] <= 0, nothing runs), "fit"
+        (some attempt passed every macro's tolerance), or "best_effort" (all MAX_ATTEMPTS
+        attempts missed; the lowest-miss attempt is returned, scored by summed |pct| across
+        macros with a flat 1.0 penalty per macro whose pct is None).
+
+    Attempt 1 gets feedback=None. Attempt N>=2's feedback is `select_tier(N)` (the
+    escalation framing) plus `build_message` of the previous attempt's fit_details. Every
+    attempt is recorded in order as an AttemptRecord carrying the feedback that produced it.
+    """
     if remaining["cal"] <= 0:
         return LoopResult(
             status="impossible",
@@ -126,7 +152,7 @@ def run_loop(available, remaining, propose_fn=propose):
             feedback = select_tier(attempt) + "\n" + build_message(misses[-1].details)
 
         meal = propose_fn(available, remaining, feedback=feedback)
-        computed = compute_macros(meal)
+        computed = compute_macros(meal, table)
         details = fit_details(computed, remaining)
         attempts.append(AttemptRecord(feedback=feedback, proposal=meal))
 
