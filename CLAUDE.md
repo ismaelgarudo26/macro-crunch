@@ -98,3 +98,16 @@ JSON list of `{id, grams}` objects.
 
 - Default branch is `main`.
 - `.gitignore` covers `.env`, `__pycache__/`, `*.pyc`, `.venv/`, `venv/`, `.DS_Store`.
+
+## Learning goals
+
+This project doubles as how I'm learning to build and reason about AI
+products (I'm moving toward AI PM work). That means:
+
+- When you implement something non-trivial, explain the *why* — the
+  design tradeoff, not just the code. One or two sentences, not a lecture.
+- Use precise names for concepts when they come up (grounding, adapter vs.
+  domain logic, fakes/mocks, context window) so I build the vocabulary.
+- When there's a real design fork, surface it and let me decide rather than
+  picking silently — the decision is the thing I'm here to learn.
+- Keep explanations brief. Teach through the work, not around it.
