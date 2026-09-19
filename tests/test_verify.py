@@ -98,7 +98,10 @@ So compute_macros and fit_details are faked per attempt; build_message and
 select_tier stay REAL, so the escalation strings are pinned for real.
 
 Contract the loop must honor for these to hold:
-  - Lives in macro_crunch/verify.py as run_loop(available, remaining, propose_fn=propose).
+  - Lives in macro_crunch/verify.py as
+    run_loop(available, remaining, propose_fn=propose, table=_DEFAULT_TABLE), where
+    _DEFAULT_TABLE is loaded from data/ingredients.json at import time (mirrors
+    vision.py's _INGREDIENTS_PATH/KNOWN_IDS pattern for the same file).
   - verify.py imports collaborators as NAMES so they can be patched here:
         from .macros import compute_macros, fit_details
         from .llm import propose          # default only; tests inject propose_fn
@@ -106,7 +109,7 @@ Contract the loop must honor for these to hold:
     empty trail. Nothing else runs. (Per-macro maxed cases are NOT rejected here;
     they ride the None-pct path inside the loop.)
   - Per attempt: propose_fn(available, remaining, feedback) -> proposal,
-    then compute_macros(proposal) ONCE, then fit_details(computed, remaining) ONCE.
+    then compute_macros(proposal, table) ONCE, then fit_details(computed, remaining) ONCE.
   - Fit decision comes from the details it already has:
         is_fit = all(m["ok"] for m in details.values())
     The loop does NOT call check_fit (that stays for external callers).
@@ -125,6 +128,7 @@ import pytest
 
 from macro_crunch import verify
 from macro_crunch.verify import run_loop, LoopResult, AttemptRecord
+from macro_crunch.macros import compute_macros as real_compute_macros
 
 
 AVAILABLE = [{"id": "chicken_breast_cooked"}, {"id": "white_rice_cooked"}]
@@ -360,3 +364,82 @@ def test_ties_resolve_to_earliest_attempt(install):
     result = run_loop(AVAILABLE, REMAINING, propose_fn=recorder)
 
     assert result.meal == "A"      # earliest of the tied minima
+
+
+# --- 10. real compute_macros integration (table threading) ------------------
+#
+# Unlike sections 1-9, these do NOT use the `install` fixture: compute_macros
+# and fit_details are left REAL, so the loop actually exercises the real
+# macro math end to end. This closes the gap where the `install` fixture
+# masked run_loop's missing `table` parameter.
+
+def test_run_loop_passes_table_to_real_compute_macros():
+    fake_table = {
+        "a": {"cal": 100, "protein": 10, "carbs": 5, "fat": 2},
+        "b": {"cal": 200, "protein": 20, "carbs": 10, "fat": 4},
+    }
+    meal = [{"id": "a", "grams": 100}, {"id": "b", "grams": 50}]
+    # hand-computed: a@100g = 100/10/5/2 in full; b@50g = half of 200/20/10/4 = 100/10/5/2
+    expected_computed = {"cal": 200.0, "protein": 20.0, "carbs": 10.0, "fat": 4.0}
+    remaining = {"cal": 200, "protein": 10, "carbs": 10, "fat": 4}
+
+    def fake_propose(available, remaining, feedback=None):
+        return meal
+
+    result = run_loop(AVAILABLE, remaining, propose_fn=fake_propose, table=fake_table)
+
+    assert result.status == "fit"
+    assert result.computed == expected_computed
+
+
+def test_run_loop_caller_supplied_table_overrides_default():
+    # Deliberately unlike the real data/ingredients.json entry for this id
+    # (130/2.7/28/0.3 per 100g) so we can prove the passed table wins.
+    fake_table = {"white_rice_cooked": {"cal": 50, "protein": 50, "carbs": 50, "fat": 50}}
+    meal = [{"id": "white_rice_cooked", "grams": 100}]
+    expected_computed = {"cal": 50.0, "protein": 50.0, "carbs": 50.0, "fat": 50.0}
+    remaining = {"cal": 50, "protein": 10, "carbs": 50, "fat": 50}
+
+    def fake_propose(available, remaining, feedback=None):
+        return meal
+
+    result = run_loop(AVAILABLE, remaining, propose_fn=fake_propose, table=fake_table)
+
+    assert result.status == "fit"
+    assert result.computed == expected_computed
+    # the real file's numbers for this id at 100g, for contrast - proves the
+    # passed table was used, not silently ignored in favor of the default
+    real_default_computed = {"cal": 130.0, "protein": 2.7, "carbs": 28.0, "fat": 0.3}
+    assert result.computed != real_default_computed
+
+
+def test_run_loop_default_table_param_wired_to_module_constant():
+    meal = [{"id": "white_rice_cooked", "grams": 200}]
+    # don't hardcode expected numbers - derive them from the same default
+    # table run_loop is supposed to fall back to, so this doesn't break if
+    # data/ingredients.json's values ever change
+    expected_computed = real_compute_macros(meal, verify._DEFAULT_TABLE)
+    remaining = {
+        "cal": expected_computed["cal"],
+        "protein": 0,
+        "carbs": expected_computed["carbs"],
+        "fat": expected_computed["fat"],
+    }
+
+    def fake_propose(available, remaining, feedback=None):
+        return meal
+
+    result = run_loop(AVAILABLE, remaining, propose_fn=fake_propose)
+
+    assert result.status == "fit"
+    assert result.computed == expected_computed
+
+
+def test_run_loop_unknown_ingredient_id_raises_key_error():
+    fake_table = {"a": {"cal": 100, "protein": 10, "carbs": 5, "fat": 2}}
+
+    def fake_propose(available, remaining, feedback=None):
+        return [{"id": "unknown_id", "grams": 50}]
+
+    with pytest.raises(KeyError):
+        run_loop(AVAILABLE, REMAINING, propose_fn=fake_propose, table=fake_table)
