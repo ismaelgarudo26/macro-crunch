@@ -22,7 +22,7 @@ _SYSTEM_PROMPT = (
 )
 
 
-def propose(available_ingredients, remaining):
+def propose(available_ingredients, remaining, feedback=None):
     """Ask the model to propose a meal, returning ONLY a validated list of {id, grams} objects.
 
     The model proposes meals; it never does arithmetic - all macro computation is done by
@@ -35,6 +35,9 @@ def propose(available_ingredients, remaining):
             is actually available.
         remaining: dict {"cal", "protein", "carbs", "fat"} - the macro budget the proposed
             meal should aim to fit.
+        feedback: optional str describing what a previous attempt got wrong (e.g. from a
+            caller's retry loop). When given, it's appended to the initial prompt under its
+            own labeled section so the model can distinguish it from the task spec.
 
     Output:
         list of {"id": str, "grams": number}. IDs always come from `available_ingredients`;
@@ -48,7 +51,7 @@ def propose(available_ingredients, remaining):
 
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": _build_user_prompt(available_ingredients, remaining)},
+        {"role": "user", "content": _build_user_prompt(available_ingredients, remaining, feedback)},
     ]
 
     last_error = None
@@ -76,14 +79,17 @@ def propose(available_ingredients, remaining):
     raise ValueError(f"model failed to produce a valid proposal after {MAX_ATTEMPTS} attempts: {last_error}")
 
 
-def _build_user_prompt(available_ingredients, remaining):
-    return (
+def _build_user_prompt(available_ingredients, remaining, feedback=None):
+    prompt = (
         "Available ingredients (id and approximate amount on hand): "
         + json.dumps(available_ingredients) + "\n"
         "Remaining macro budget for this meal: " + json.dumps(remaining) + "\n"
         "Propose a meal using only the available ingredient ids that roughly fits the "
         "remaining macro budget."
     )
+    if feedback:
+        prompt += "\n\nFeedback from a previous attempt:\n" + feedback
+    return prompt
 
 
 def _validate(raw, available_ingredients):

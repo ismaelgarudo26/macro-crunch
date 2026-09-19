@@ -192,6 +192,19 @@ def test_build_user_prompt_includes_remaining_budget():
     assert json.dumps(REMAINING) in prompt
 
 
+def test_build_user_prompt_includes_feedback_when_given():
+    prompt = _build_user_prompt(AVAILABLE, REMAINING, feedback="carbs 22% over")
+
+    assert "Feedback from a previous attempt" in prompt
+    assert "carbs 22% over" in prompt
+
+
+def test_build_user_prompt_omits_feedback_section_when_none():
+    prompt = _build_user_prompt(AVAILABLE, REMAINING)
+
+    assert "Feedback from a previous attempt" not in prompt
+
+
 # --- propose -------------------------------------------------------------------
 #
 # propose() constructs its own OpenAI client internally, so these fake out the
@@ -266,3 +279,12 @@ def test_propose_exhausts_attempts_and_raises(monkeypatch):
         propose(AVAILABLE, REMAINING)
 
     assert len(recorder.calls) == MAX_ATTEMPTS
+
+
+def test_propose_passes_feedback_into_first_prompt(monkeypatch):
+    recorder = _install_fake_openai(monkeypatch, [VALID_RAW])
+
+    propose(AVAILABLE, REMAINING, feedback="carbs 22% over")
+
+    first_call_messages = recorder.calls[0]["messages"]
+    assert "carbs 22% over" in first_call_messages[1]["content"]
