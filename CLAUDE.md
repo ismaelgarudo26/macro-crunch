@@ -21,22 +21,25 @@ tests, and data live in separate top-level folders:
 - [macro_crunch/verify.py](macro_crunch/verify.py) — the orchestration layer: `run_loop` wires
   `propose` → `compute_macros` → `fit_details` together with retry/escalation logic. See the
   "macro_crunch/verify.py — run_loop contract" section below.
-- [macro_crunch/vision.py](macro_crunch/vision.py) — grounds vision-model output against the known-ingredient
-  whitelist (`extract_ingredients`, `extract_remaining`). `call_vision` itself is still a `NotImplementedError`
-  stub — no live vision API call is wired up yet. See the "macro_crunch/vision.py — grounding contract" section
-  below.
+- [macro_crunch/vision.py](macro_crunch/vision.py) — `call_vision` sends one image + prompt to the OpenAI vision
+  model and returns parsed JSON; `extract_ingredients` and `extract_remaining` ground that output against the
+  known-ingredient whitelist / the four macro keys. See the "macro_crunch/vision.py — vision call and grounding
+  contract" section below.
 - [tests/test_macros.py](tests/test_macros.py) — pytest suite covering `compute_macros`, `check_fit`, and
   `fit_details`, including boundary-value tests for every tolerance threshold and the zero/negative-remaining
   branches.
 - [tests/test_llm.py](tests/test_llm.py), [tests/test_verify.py](tests/test_verify.py),
   [tests/test_vision.py](tests/test_vision.py) — pytest suites for `llm.py`, `verify.py`, and `vision.py`
   respectively, mirroring the module split above.
-- `.env.example` — contains only `OPENAI_API_KEY=`; `.env` (gitignored) holds the real key that `llm.py` loads
-  via `python-dotenv`.
+- `.env.example` — contains only `OPENAI_API_KEY=`; `.env` (gitignored) holds the real key that `llm.py` and
+  `vision.py` load via `python-dotenv`.
+- [README.md](README.md) — public-facing clone-and-run setup (venv, `pip install -r requirements.txt`, `.env`),
+  how to run the tests, and a short "Try it" snippet chaining `vision.extract_ingredients` → `verify.run_loop`.
 - `conftest.py` at the repo root is intentionally empty — its only job is to make pytest resolve `macro_crunch`
   as an importable package regardless of how pytest is invoked.
 - `requirements.txt` pins the full dependency set (openai, pydantic, python-dotenv, pytest, and their
-  transitive deps) as resolved by `pip freeze` — not hand-curated.
+  transitive deps) as resolved by `pip freeze` — not hand-curated. It pins `openai==3.0.0`, which uses `httpx2`
+  → `truststore`, so HTTPS verification goes through the OS certificate store.
 
 `macro_crunch/macros.py` must stay free of `streamlit`/`openai` imports and side effects (printing, I/O) — it is
 meant to be pure logic that a future UI/API layer imports — this keeps the test suite deterministic (no API key,
@@ -47,10 +50,12 @@ no network) and lets the UI and model layers be swapped without touching logic (
 There is no `pyproject.toml` — `requirements.txt` pins dependencies (a raw `pip freeze`, not hand-curated).
 
 ```bash
-# Install dependencies (only needed once per environment)
-python -m pip install -r requirements.txt
+# Create and activate a venv, then install dependencies (only needed once)
+python -m venv .venv
+.venv\Scripts\activate        # Windows; macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
 
-# Run the full test suite
+# Run the full test suite (no API key or network needed — tests use fake OpenAI clients)
 python -m pytest -v
 
 # Run a single test
@@ -61,9 +66,10 @@ python -m pytest -v -k compute_macros
 python -m pytest -v -k check_fit
 ```
 
-On this Windows dev machine, a bare `python`/`py` may not resolve (Microsoft Store alias stub). If that happens,
-call the interpreter directly, e.g.
-`"C:\Users\Ismael\AppData\Local\Programs\Python\Python312\python.exe" -m pytest -v`.
+On this Windows dev machine, use the venv interpreter, e.g. `.venv\Scripts\python.exe -m pytest -v`. The global
+Python has an older `openai` whose live calls fail with `CERTIFICATE_VERIFY_FAILED`, because AVG antivirus
+intercepts HTTPS; the pinned `openai`/`truststore` stack in the venv trusts the OS certificate store and works.
+Don't add `verify=False`/truststore hacks to the code — fix the environment, not the code.
 
 ## Architecture notes
 
@@ -119,11 +125,26 @@ contract; the summary here is a pointer, not a substitute.
 - Every attempt (including the ones that miss) is recorded in order as an `AttemptRecord`, carrying the
   `feedback` string that produced it — this is what makes the escalation auditable rather than a black box.
 
-## macro_crunch/vision.py — grounding contract
+## macro_crunch/vision.py — vision call and grounding contract
 
-`call_vision(image, prompt)` is a `NotImplementedError` stub — there is no live vision API integration yet.
-`extract_ingredients` and `extract_remaining` are the pure grounding logic layered on top, injectable with a
-fake `vision_fn` for testing without a real API call.
+`call_vision(image, prompt, mime_type="image/jpeg")` is the adapter to the live API; `extract_ingredients` and
+`extract_remaining` are the grounding logic layered on top, injectable with a fake `vision_fn` for testing
+without a real API call.
+
+- `call_vision` base64-encodes the raw image bytes into a data URL and sends ONE multimodal user message (a
+  `text` part with the prompt + an `image_url` part) to `MODEL` (`gpt-4o-mini`) with
+  `response_format={"type": "json_object"}`. JSON mode can only return objects, so a reply shaped
+  `{"items": [...]}` is unwrapped to the bare list; any other object is returned as-is.
+- Fails loud: one request, no retry. Malformed JSON raises `json.JSONDecodeError` to the caller. Unlike
+  `llm.propose`, retrying doesn't pay here — a vision misread is mostly deterministic for the same image, and
+  every retry re-sends the image tokens; the caller (e.g. asking for a clearer photo) decides instead. Transient
+  network errors are already retried by the OpenAI SDK.
+- `INGREDIENT_PROMPT` embeds every id in `KNOWN_IDS`, so the model is grounded at the prompt too, not just
+  filtered after. Every prompt must contain the word "json" — the API returns 400 for `json_object` mode
+  otherwise; `test_prompt_mentions_json` pins this.
+- Lesson: fakes can't catch real-API rules or behavior. Both of the above were found only by a live run — the
+  id-less prompt made the model return row numbers as ids (all silently dropped by grounding), and the missing
+  "json" word was a 400 the fake client never enforces.
 
 - **Grounding** here means: take a model's raw, unconstrained guess and filter/coerce it against a known-valid
   set before the rest of the system ever sees it — the same shape of problem `llm.propose`'s id-whitelist
