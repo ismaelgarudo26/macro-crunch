@@ -1,13 +1,25 @@
+import base64
 import json
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
+
+MODEL = "gpt-4o-mini"
 
 _INGREDIENTS_PATH = Path(__file__).resolve().parent.parent / "data" / "ingredients.json"
 KNOWN_IDS = set(json.loads(_INGREDIENTS_PATH.read_text()).keys())
 
 
 INGREDIENT_PROMPT = (
-    "List the food items you see in this image. For each, return a row with an "
-    "'id' and an 'approx' (a rough amount, as free text)."
+    "List the food items you see in this image that match one of these ingredient ids: "
+    + ", ".join(sorted(KNOWN_IDS)) + ". "
+    "Use each id exactly as written above, and skip any food that doesn't match one. "
+    "Respond in JSON as an object with an 'items' list; each row has an 'id' (one of the "
+    "ids above) and an 'approx' (a rough amount on hand, as free text)."
 )
 
 
@@ -19,9 +31,45 @@ REMAINING_PROMPT = (
 _REMAINING_KEYS = ("cal", "protein", "carbs", "fat")
 
 
-def call_vision(image, prompt):
-    """Not yet implemented."""
-    raise NotImplementedError
+def call_vision(image, prompt, mime_type="image/jpeg"):
+    """Send one image + prompt to the vision model and return its parsed JSON reply.
+
+    Input:
+        image: raw image bytes (e.g. from a browser upload), sent inline as a base64 data URL.
+        prompt: instruction text, sent as the text part of the same user message.
+        mime_type: the image's media type, used in the data URL.
+
+    Output:
+        the model's reply parsed from JSON. If it's an object with an "items" key, the
+        list under "items" is returned (JSON mode can only return objects, so list-shaped
+        answers come wrapped); otherwise the parsed object itself.
+
+    Fails loud: one request, no retry. Malformed JSON raises json.JSONDecodeError - a
+    re-sent image usually gets the same misread, so the caller (e.g. asking the user for
+    a clearer photo) decides what to do. Transient network errors are already retried by
+    the OpenAI SDK itself.
+    """
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    data_url = f"data:{mime_type};base64,{base64.b64encode(image).decode('ascii')}"
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ],
+            }
+        ],
+        response_format={"type": "json_object"},
+    )
+
+    parsed = json.loads(response.choices[0].message.content)
+    if isinstance(parsed, dict) and "items" in parsed:
+        return parsed["items"]
+    return parsed
 
 
 def extract_ingredients(image, vision_fn=call_vision, prompt=INGREDIENT_PROMPT):
