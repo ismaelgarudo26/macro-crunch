@@ -319,6 +319,13 @@ def test_ingredient_prompt_describes_items_id_approx_shape():
         assert mentions_key(key), f"INGREDIENT_PROMPT does not name the {key!r} key"
 
 
+@pytest.mark.parametrize("name", ["INGREDIENT_PROMPT", "REMAINING_PROMPT"])
+def test_prompt_mentions_json(name):
+    # The real API rejects response_format json_object (400) unless the messages contain
+    # the word "json" - the fake client doesn't enforce that rule, so pin it here.
+    assert "json" in getattr(vision, name).lower()
+
+
 # End-to-end (default vision_fn, fake client only)
 
 def test_extract_ingredients_default_vision_fn_end_to_end(monkeypatch):
