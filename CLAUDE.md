@@ -45,6 +45,16 @@ tests, and data live in separate top-level folders:
 meant to be pure logic that a future UI/API layer imports — this keeps the test suite deterministic (no API key,
 no network) and lets the UI and model layers be swapped without touching logic (separation of concerns).
 
+## Product context
+
+- Users: people tracking macros (e.g. with MyFitnessPal) who want a quick meal from what's in their fridge.
+- Core promise: speed — a meal suggestion in the fewest taps. Favor designs that minimize user corrections.
+- Target UX: phone browser; user picks a fridge photo and a MyFitnessPal screenshot from their gallery.
+  Inputs arrive as uploaded bytes, never device file paths.
+- Planned: one quick human confirmation ("we found these — correct?") right after the vision step; no human in
+  the macro math or retry loop.
+- Repo goal: clone-and-run on any machine with only an OpenAI API key (see README).
+
 ## Commands
 
 There is no `pyproject.toml` — `requirements.txt` pins dependencies (a raw `pip freeze`, not hand-curated).
